@@ -1,0 +1,50 @@
+public class MyData {
+    private int id;
+    private String name;
+    private long timestamp;
+    
+    // Constructor, getters, and setters
+}
+
+
+@Dao
+public interface MyDataDao {
+    @Query("SELECT * FROM mydata")
+    List<MyData> getAll();
+    
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    void insertAll(List<MyData> myDataList);
+    
+    @Query("DELETE FROM mydata")
+    void deleteAll();
+}
+
+public interface MyApiService {
+    @GET("mydata")
+    Call<List<MyData>> getData(@Header("If-Modified-Since") String lastUpdated);
+}
+
+private void fetchDataAndUpdateDatabase() {
+    MyDataDao dao = MyDatabase.getInstance(context).myDataDao();
+    
+    // Get the last updated timestamp from the local database
+    long lastUpdated = dao.getAll().isEmpty() ? 0 : dao.getAll().get(0).getTimestamp();
+    
+    // Call the API with the last updated timestamp in the request headers
+    MyApiService service = retrofit.create(MyApiService.class);
+    Call<List<MyData>> call = service.getData(String.valueOf(lastUpdated));
+    Response<List<MyData>> response = call.execute();
+    
+    if (response.isSuccessful()) {
+        // Check if there is new data
+        List<MyData> newData = response.body();
+        if (!newData.isEmpty()) {
+            // Insert the new data into the local database
+            dao.deleteAll();
+            dao.insertAll(newData);
+            
+            // Update the last updated timestamp in the local database
+            dao.insert(new MyData(0, "", System.currentTimeMillis()));
+        }
+    }
+}
